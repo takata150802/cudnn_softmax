@@ -1,5 +1,7 @@
 #include <iostream>
 #include <vector>
+#include <random>
+#include <limits>
 #include <cudnn.h>
 
 #define CHECK(call)                                                  \
@@ -35,6 +37,8 @@
     }                                                                \
 }
 
+void rand_vector_float (std::vector<float> &v);
+
 int main(int argc, char *argv[]) {
     cudnnHandle_t handle;
     cudnnCreate(&handle);
@@ -42,8 +46,15 @@ int main(int argc, char *argv[]) {
     int n = 5, c = 4, h = 1, w =1;
 
     std::vector<float> h_y(n * c * h* w, 0);
-    std::vector<float> h_dy(n * c * h* w, 1);
-    std::vector<float> h_dx(n * c * h* w, -1);
+    std::vector<float> h_dy(n * c * h* w, 0);
+    std::vector<float> h_dx(n * c * h* w, std::numeric_limits<float>::quiet_NaN());
+    std::vector<float> h_dx_excpt(n * c * h* w, std::numeric_limits<float>::quiet_NaN());
+    rand_vector_float(h_y);
+    rand_vector_float(h_dy);
+
+    for (std::vector<float>::const_iterator i = h_dy.begin(); i != h_dy.end(); ++i)
+        std::cout << *i << ' ';
+    std::cout << std::endl;
 
     cudnnTensorDescriptor_t yDesc;
     cudnnCreateTensorDescriptor(&yDesc);
@@ -90,6 +101,7 @@ int main(int argc, char *argv[]) {
             dxDesc,
             dx);
 
+    CHECK(cudaDeviceSynchronize());
     cudaMemcpy(h_dx.data(), dx, size_, cudaMemcpyDeviceToHost);
 
     for (std::vector<float>::const_iterator i = h_dx.begin(); i != h_dx.end(); ++i)
@@ -105,4 +117,17 @@ int main(int argc, char *argv[]) {
     cudnnDestroy(handle);
     CHECK(cudaDeviceSynchronize());
     return 0;
+}
+
+void pseudosoftmaxbackward() {
+    return;
+}
+
+std::mt19937 mt(0);
+void rand_vector_float (std::vector<float> &v) {
+    std::normal_distribution<> rand(0, 5);
+    for (std::vector<float>::iterator i = v.begin(); i != v.end(); ++i) {
+        *i = rand(mt);
+    }
+    return;
 }
