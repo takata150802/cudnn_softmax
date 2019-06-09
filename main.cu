@@ -46,6 +46,9 @@ void pseudoSoftmaxBackward(const std::vector<float> &y,
 int main(int argc, char *argv[]) {
     cudnnHandle_t handle;
     cudnnCreate(&handle);
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
     int n = 5, c = 4, h = 1, w =1;
 
@@ -88,6 +91,7 @@ int main(int argc, char *argv[]) {
     cudaMemcpy(dy, h_dy.data(), size_, cudaMemcpyHostToDevice);
 
     const float alpha = 1, beta = 0;
+    cudaEventRecord(start);
     cudnnSoftmaxBackward(
             handle,
             CUDNN_SOFTMAX_FAST,
@@ -100,6 +104,7 @@ int main(int argc, char *argv[]) {
             &beta,
             dxDesc,
             dx);
+    cudaEventRecord(stop);
 
     pseudoSoftmaxBackward(h_y, h_dy, h_dx_expct, n, c, h, w);
 
@@ -114,12 +119,18 @@ int main(int argc, char *argv[]) {
         std::cout << *i << ' ';
     std::cout << std::endl;
 
+    float msec = 0;
+    cudaEventElapsedTime(&msec, start, stop);
+    std::cout << "Exec time: " << msec * 1000 << "[usec]" << std::endl;
+
     cudaFree(y);
     cudaFree(dy);
     cudaFree(dx);
     cudnnDestroyTensorDescriptor(yDesc);
     cudnnDestroyTensorDescriptor(dyDesc);
     cudnnDestroyTensorDescriptor(dxDesc);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
     cudnnDestroy(handle);
     CHECK(cudaDeviceSynchronize());
     return 0;
