@@ -38,6 +38,10 @@
 }
 
 void rand_vector_float (std::vector<float> &v);
+void pseudoSoftmaxBackward(const std::vector<float> &y, 
+                           const std::vector<float> &dy,
+                           std::vector<float> &dx,
+                           const int N, const int  C, const int H, const int W);
 
 int main(int argc, char *argv[]) {
     cudnnHandle_t handle;
@@ -48,13 +52,9 @@ int main(int argc, char *argv[]) {
     std::vector<float> h_y(n * c * h* w, 0);
     std::vector<float> h_dy(n * c * h* w, 0);
     std::vector<float> h_dx(n * c * h* w, std::numeric_limits<float>::quiet_NaN());
-    std::vector<float> h_dx_excpt(n * c * h* w, std::numeric_limits<float>::quiet_NaN());
+    std::vector<float> h_dx_expct(n * c * h* w, std::numeric_limits<float>::quiet_NaN());
     rand_vector_float(h_y);
     rand_vector_float(h_dy);
-
-    for (std::vector<float>::const_iterator i = h_dy.begin(); i != h_dy.end(); ++i)
-        std::cout << *i << ' ';
-    std::cout << std::endl;
 
     cudnnTensorDescriptor_t yDesc;
     cudnnCreateTensorDescriptor(&yDesc);
@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
     cudnnSoftmaxBackward(
             handle,
             CUDNN_SOFTMAX_FAST,
-            CUDNN_SOFTMAX_MODE_INSTANCE,
+            CUDNN_SOFTMAX_MODE_CHANNEL,
             &alpha,
             yDesc,
             y,
@@ -101,10 +101,16 @@ int main(int argc, char *argv[]) {
             dxDesc,
             dx);
 
+    pseudoSoftmaxBackward(h_y, h_dy, h_dx_expct, n, c, h, w);
+
     CHECK(cudaDeviceSynchronize());
     cudaMemcpy(h_dx.data(), dx, size_, cudaMemcpyDeviceToHost);
 
     for (std::vector<float>::const_iterator i = h_dx.begin(); i != h_dx.end(); ++i)
+        std::cout << *i << ' ';
+    std::cout << std::endl;
+
+    for (std::vector<float>::const_iterator i = h_dx_expct.begin(); i != h_dx_expct.end(); ++i)
         std::cout << *i << ' ';
     std::cout << std::endl;
 
@@ -119,7 +125,52 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void pseudosoftmaxbackward() {
+namespace {
+    int getIndex(const int n,
+                 const int c,
+                 const int h,
+                 const int w,
+                 const int N,
+                 const int C,
+                 const int H,
+                 const int W
+                 ) {
+        return n * C * H * W
+                 + c * H * W
+                     + h * W
+                         + w;
+    }
+}
+
+void pseudoSoftmaxBackward(const std::vector<float> &y, 
+                           const std::vector<float> &dy,
+                           std::vector<float> &dx,
+                           const int N, const int  C, const int H, const int W) {
+    int idx, idx_s;
+    std::vector<float> sum_(N * 1 * H * W, 0);
+
+    for (int n = 0; n < N; ++n) {
+        for (int c = 0; c < C; ++c) {
+            for (int h = 0; h < H; ++h) {
+                for (int w = 0; w < W; ++w) {
+                    idx = getIndex(n, c, h, w, N, C, H, W);
+                    idx_s = getIndex(n, 1, h, w, N, 1, H, W);
+                    sum_[idx_s] += y[idx] * dy[idx];
+                }
+            }
+        }
+    }
+    for (int n = 0; n < N; ++n) {
+        for (int c = 0; c < C; ++c) {
+            for (int h = 0; h < H; ++h) {
+                for (int w = 0; w < W; ++w) {
+                    idx = getIndex(n, c, h, w, N, C, H, W);
+                    idx_s = getIndex(n, 1, h, w, N, 1, H, W);
+                    dx[idx] = y[idx] * (dy[idx] - sum_[idx_s]);
+                }
+            }
+        }
+    }
     return;
 }
 
